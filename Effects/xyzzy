@@ -1,0 +1,220 @@
+desc:meter with peak 5.10.2017
+//last edited 5.3.2017
+//trying to get everything into one function that can be called by any plugin
+//currently stuck on trying to represent dB readout.
+
+slider1:1<0.01,2,0.01>peak timer len
+
+slider7:0.2<0,1,0.01>R
+slider8:0.6<0,1,0.01>G
+slider9:0.8<0,1,0.01>B
+slider10:5<0,6,1>curve type
+
+@init
+
+//------------------------------- INIT METER ------------------------------//
+
+len = 1;
+meter_x = 0;
+meter_y = 0;
+peak_label_x = 0;
+peak_label_y = 0;
+
+peak_bool = 0;
+peak_value = 0;
+
+all_time_high = 0;
+
+//------------------------------- CONSTANTS -------------------------------//
+
+log2db = 8.6858896380650365530225783783321;  // 20 / ln(10) // stillwell
+db2log = 0.11512925464970228420089957273422; // ln(10) / 20 // stillwell
+amp = 6/log(2);   //loser
+//denorm = 10^-30;  //loser
+//gain = 10^(dB_slider/20);  //loser
+//wet= 2^(dB_slider/6); //
+//pi = 22/7;  //loser
+
+//------------------------------- DRAW METER ------------------------------//
+
+function draw_meters()
+(
+//draw_meter(0,yleft);
+//truncate the meter height
+gfx_r=0.2;gfx_g=0.6;gfx_b=0.8;
+meter_h = gfx_h - floor(gfx_h*0.09);
+gfx_rect(0,gfx_h - meter_h * log_spl0,15,meter_h * log_spl0);
+//draw_meter(17,yright);
+gfx_rect(17,gfx_h - meter_h * log_spl1,15,meter_h * log_spl1);
+);
+
+//------------------------------- DRAW PEAK MARKER ------------------------//
+
+function draw_peaks()
+(
+  gfx_x=0;gfx_y=gfx_h -(gfx_h - gfx_h * 0.09) * peak_spl0;
+  gfx_r=R;gfx_g=G;gfx_b=B;
+  gfx_rect(gfx_x,gfx_y,15, 1);
+  // border_t in this case is used for padding
+  gfx_x=17;gfx_y=gfx_h -(gfx_h - gfx_h * 0.09) * peak_spl1;
+  gfx_rect(gfx_x,gfx_y,15, 1);
+  // border_t in this case is used for padding
+);
+
+//--------------------------- METER TIMER ------------------------------//
+// this smooths the meters and peak markers
+
+function meter_timers()
+(
+  log_spl0 > old_log_spl0 ? (
+    log_spl0_timer = srate;
+    log_spl0_hold = log_spl0;);
+  log_spl1 > old_log_spl1 ? (
+    log_spl1_timer = srate;
+    log_spl1_hold = log_spl1;); 
+  
+  log_spl0_timer > 0 ? (
+    log_spl0_timer -= 1;
+    log_spl0_hold -= 1/srate;
+    log_spl0 = log_spl0_hold;);
+  log_spl1_timer > 0 ? (
+    log_spl1_timer -= 1;
+    log_spl1_hold -= 1/srate;
+    log_spl1 = log_spl1_hold;);
+);
+
+function peak_timers()
+(
+  peak_spl0 > old_peak_spl0 ? (
+    peak_spl0_timer = peak_timer_len;
+    peak_spl0_hold = peak_spl0;); 
+  peak_spl1 > old_peak_spl1 ? (
+    peak_spl1_timer = peak_timer_len;
+    peak_spl1_hold = peak_spl1;); 
+  
+  peak_spl0_timer > 0 ? (
+    peak_spl0_timer -= 1;
+    peak_spl0_hold -= 1/peak_timer_len;
+    peak_spl0 = peak_spl0_hold;); 
+  peak_spl1_timer > 0 ? (
+    peak_spl1_timer -= 1;
+    peak_spl1_hold -= 1/peak_timer_len;
+    peak_spl1 = peak_spl1_hold;); 
+);
+
+//------------------------------- CLIP INDICATOR ------------------------//
+
+function clip_indicator()
+( 
+  clip_indicator_h = floor(gfx_h*0.09);
+  
+  clip_indicator == 1 ? (
+    gfx_r=0.70;gfx_g=0;gfx_b=0;
+    ):(
+    gfx_r=0.3;gfx_g=0;gfx_b=0;
+    );
+  gfx_rect(0,0,32,clip_indicator_h);
+);
+
+
+function print_peak()
+(
+  peak_label_x = 4;
+  peak_label_y = gfx_y/11;
+  gfx_setfont(idx=1, Arial, 12);
+  gfx_x=peak_label_x;gfx_y=clip_indicator_h * 0.3;
+  gfx_r=0.8;gfx_g=0.8;gfx_b=0.8;
+  gfx_drawnumber(all_time_high,1);
+  //gfx_drawstr("dB");
+);
+
+//-------------------------- TRANSFER FUNCTIONS ------------------------//
+
+function transfer(x)
+(
+  slider10 == 0 ? y = cos(1.5708 *x - 1.5708);     //works
+  slider10 == 1 ? y = exp(x * 0.69314718057) - 1;  //works
+  slider10 == 2 ? y = log(1.71828182845 *x +1);    //works
+  slider10 == 3 ? y = tan(0.7853981634 * x);       //works
+  slider10 == 4 ? y = log10(9 * x + 1);            //works
+  slider10 == 5 ? y = sin(1.570797 * x);           //works
+  slider10 == 6 ? y = 20 * log10(x);               //doesn't work.
+  y;
+);
+
+@slider
+
+peak_timer_len = srate*slider1;
+R = slider7;
+G = slider8;
+B = slider9;
+
+@sample
+
+abs_spl0 = abs(spl0);
+abs_spl1 = abs(spl1);
+
+// change to "log" or other transfer functions...
+log_spl0 = transfer(abs_spl0);
+log_spl1 = transfer(abs_spl1);
+
+meter_timers();
+
+peak_timers();
+
+//--------------------------- RETAIN HIGHEST VALUE ---------------------// 
+
+maxpeak = max(log_spl0,log_spl1);
+maxpeak > all_time_high ? all_time_high = maxpeak;
+
+//--------------------------- CLIP INDICATOR ---------------------------//
+
+maxpeak >= 1 ? (
+  clip_indicator=1;
+  clip_value = maxpeak;  
+  clip_timer = 2 * peak_timer_len; // a little longer than the peak hold
+  clip_timer -= 1;
+  clip_timer < 0 ? (
+    clip_timer = 0;
+    clip_indicator = 0;
+    clip_value = 0;
+    );
+);
+   
+//--------------------------- CLIP TIMER -------------------------------//
+// bright red clipping indicator timer.
+clip_timer > 0 ? (
+  clip_timer -= 1;
+  ):(
+  clip_indicator = 0;
+  clip_value = 0;
+  clip_timer = 0;
+  );
+
+// not sure these are needed
+spl0=spl0;
+spl1=spl1;
+
+old_log_spl0 = log_spl0;
+old_log_spl1 = log_spl1;
+
+//--------------------------- GRAPHICS ---------------------------------//
+
+@gfx 640 480
+
+//the dark blue vertical rectangles
+gfx_r=0.0;gfx_g=0.2;gfx_b=0.25;
+gfx_rect(0,0,15,gfx_h);gfx_rect(17,0,15,gfx_h);
+
+draw_meters();
+
+draw_peaks();
+
+clip_indicator();  // this is displayed no matter what, its color changes.
+
+print_peak(); // draw the peak value in db on the clip indicator
+
+
+
+
+
